@@ -4,6 +4,8 @@ import NumberSelector from './components/NumberSelector';
 import StatsViewer from './components/StatsViewer';
 import GameResultCard from './components/GameResultCard';
 import { generateFiveGames } from './utils/lotto';
+import { computeLottoStats, getLatestRound } from './utils/statsHelper';
+import initialRounds from './data/initial-data.json';
 import {
   Sparkles,
   Dices,
@@ -16,59 +18,64 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  const [latestRoundInfo, setLatestRoundInfo] = useState(null);
-  const [statsData, setStatsData] = useState(null);
+  const [roundsData, setRoundsData] = useState(initialRounds);
+  const [latestRoundInfo, setLatestRoundInfo] = useState(() => getLatestRound(initialRounds));
+  const [statsData, setStatsData] = useState(() => computeLottoStats(initialRounds, 30));
   const [selectedRoundCount, setSelectedRoundCount] = useState(30);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   // User constraints
   const [fixedNumbers, setFixedNumbers] = useState([]);
   const [excludedNumbers, setExcludedNumbers] = useState([]);
 
   // Generated 5 games
-  const [generatedGames, setGeneratedGames] = useState([]);
+  const [generatedGames, setGeneratedGames] = useState(() => {
+    const initialStats = computeLottoStats(initialRounds, 30);
+    return generateFiveGames(initialStats.stats, [], []);
+  });
 
-  // Fetch stats and latest info
-  const fetchStats = async (count = selectedRoundCount) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch(`/api/lotto/stats?count=${count}`);
-      if (!res.ok) throw new Error('데이터를 불러오는데 실패했습니다.');
-      const data = await res.json();
-      if (data.success) {
-        setStatsData(data);
+  // Try fetching latest data from API if server is running, otherwise use local initial-data
+  useEffect(() => {
+    const syncWithBackend = async () => {
+      try {
+        const resLatest = await fetch('/api/lotto/latest');
+        if (resLatest.ok) {
+          const lData = await resLatest.json();
+          if (lData.success && lData.data) {
+            setLatestRoundInfo(lData.data);
+          }
+        }
+        const resStats = await fetch(`/api/lotto/stats?count=${selectedRoundCount}`);
+        if (resStats.ok) {
+          const sData = await resStats.json();
+          if (sData.success) {
+            setStatsData(sData);
+          }
+        }
+      } catch (e) {
+        // Static GitHub Pages environment: computed from initial-data.json
+        console.log('Running in static mode with embedded lotto data');
       }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+    syncWithBackend();
+  }, []);
 
-  const fetchLatest = async () => {
+  const handleSelectRoundCount = async (count) => {
+    setSelectedRoundCount(count);
     try {
-      const res = await fetch('/api/lotto/latest');
+      const res = await fetch(`/api/lotto/stats?count=${count}`);
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
-          setLatestRoundInfo(data.data);
+          setStatsData(data);
+          return;
         }
       }
     } catch (e) {
-      console.warn('Failed to fetch latest round info', e);
+      // Fallback to client-side compute
     }
-  };
-
-  useEffect(() => {
-    fetchLatest();
-    fetchStats(selectedRoundCount);
-  }, []);
-
-  const handleSelectRoundCount = (count) => {
-    setSelectedRoundCount(count);
-    fetchStats(count);
+    const computed = computeLottoStats(roundsData, count);
+    setStatsData(computed);
   };
 
   // Toggle Fixed Numbers (max 5)
@@ -80,7 +87,6 @@ export default function App() {
         alert('고정 번호는 최대 5개까지만 선택할 수 있습니다.');
         return;
       }
-      // Remove from excluded if present
       if (excludedNumbers.includes(num)) {
         setExcludedNumbers(excludedNumbers.filter(n => n !== num));
       }
@@ -97,7 +103,6 @@ export default function App() {
         alert('제외 번호는 최대 10개까지만 선택할 수 있습니다.');
         return;
       }
-      // Remove from fixed if present
       if (fixedNumbers.includes(num)) {
         setFixedNumbers(fixedNumbers.filter(n => n !== num));
       }
@@ -116,14 +121,6 @@ export default function App() {
     const games = generateFiveGames(statsData.stats, fixedNumbers, excludedNumbers);
     setGeneratedGames(games);
   };
-
-  // Auto-generate on initial data load
-  useEffect(() => {
-    if (statsData && statsData.stats && generatedGames.length === 0) {
-      const initialGames = generateFiveGames(statsData.stats, [], []);
-      setGeneratedGames(initialGames);
-    }
-  }, [statsData]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 pb-16">
@@ -155,7 +152,7 @@ export default function App() {
                   제 {latestRoundInfo.drwNo}회 당첨결과
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  {latestRoundInfo.drwNoDate} 추첨
+                  {latestRoundInfo.drwNoDate || '최신 회차'} 추첨
                 </div>
               </div>
               <div className="flex items-center gap-1">
@@ -229,7 +226,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Decorative background shapes */}
           <div className="absolute -right-10 -bottom-10 w-64 h-64 rounded-full bg-white/10 blur-2xl pointer-events-none" />
           <div className="absolute left-1/2 -top-20 w-48 h-48 rounded-full bg-indigo-500/30 blur-3xl pointer-events-none" />
         </div>
@@ -257,12 +253,7 @@ export default function App() {
 
         {/* Section 3: Statistics Viewer */}
         <section id="stats">
-          {loading ? (
-            <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
-              <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-              <p className="text-sm font-semibold text-slate-600">동행복권 최근 당첨 통계를 불러오는 중입니다...</p>
-            </div>
-          ) : statsData ? (
+          {statsData && (
             <StatsViewer
               stats={statsData.stats}
               hotNumbers={statsData.hotNumbers}
@@ -272,7 +263,7 @@ export default function App() {
               onSelectRoundCount={handleSelectRoundCount}
               selectedRoundCount={selectedRoundCount}
             />
-          ) : null}
+          )}
         </section>
       </main>
 
