@@ -3,9 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "node server/server.js",
+    "postinstall": "npm install --prefix server && npm install --prefix client",
     "build": "npm run build --prefix client",
+    "start": "node server/server.js",
     "dev:server": "node server/server.js",
     "dev:client": "npm run dev --prefix client"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.1"
   }
 }
