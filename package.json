@@ -1,0 +1,11 @@
+﻿{
+  "name": "lotto-generator-weighted",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server/server.js",
+    "build": "npm run build --prefix client",
+    "dev:server": "node server/server.js",
+    "dev:client": "npm run dev --prefix client"
+  }
+}
